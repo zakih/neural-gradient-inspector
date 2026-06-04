@@ -1,0 +1,45 @@
+experiment:
+  name: damped_oscillator_pinn
+  seed: 42
+
+physics:
+  m: 1.0          # mass
+  c: 0.3          # damping coefficient (underdamped: c^2 < 4mk)
+  k: 4.0          # stiffness
+  x0: 1.0         # initial position
+  v0: 0.0         # initial velocity
+  t_max: 20.0     # time domain length
+  n_collocation: 2000
+
+model:
+  in_dim: 1
+  out_dim: 1
+  hidden_width: 64
+  hidden_depth: 4
+  activation: tanh
+
+training:
+  epochs: 300
+  learning_rate: 1.0e-3
+  weight_decay: 0.0
+  scheduler: cosine          # none | step | cosine | plateau
+  early_stopping_patience: 0 # 0 disables
+  gradient_clip_norm: 0.0    # 0 disables
+  w_physics: 1.0
+  w_ic: 1.0
+
+checkpointing:
+  save_best: true
+  save_every_n_epochs: 50
+  metric: val_loss
+  mode: min
+
+visualization:
+  gradient_capture_interval: 1
+  gradient_metric: l2_norm    # l2_norm | mean_abs
+  architecture_diagram: true
+  save_all_plots: true
+
+mlflow:
+  tracking_uri: runs/mlflow
+  experiment_name: default

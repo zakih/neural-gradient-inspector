@@ -1,0 +1,14 @@
+# NOTE: torch is installed separately in the Dockerfile from the CPU-only wheel
+# index (https://download.pytorch.org/whl/cpu). Do not add it here, or pip will
+# pull the much larger default CUDA build. For a local (non-Docker) CPU install:
+#     pip install torch --index-url https://download.pytorch.org/whl/cpu
+#     pip install -r requirements.txt
+
+mlflow>=2.12.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
+tqdm>=4.66.0
+numpy>=1.26.0
+scipy>=1.11.0
+pyyaml>=6.0.0
+jupyterlab>=4.0.0
