@@ -1,10 +1,9 @@
-from .config import Config
-from .dataset import BaseDataset, OscillatorDataset, make_dataloaders
-from .model import BaseModel, MLP
-from .trainer import Trainer, compute_loss
-from . import utils
+"""Model Gradient Tracker — two tools for seeing inside training.
 
-__all__ = [
-    "Config", "BaseDataset", "OscillatorDataset", "make_dataloaders",
-    "BaseModel", "MLP", "Trainer", "compute_loss", "utils",
-]
+    from src.gradient_tracker import GradientTracker
+    from src.architecture import to_mermaid
+"""
+from .gradient_tracker import GradientTracker
+from .architecture import to_mermaid, save_mermaid
+
+__all__ = ["GradientTracker", "to_mermaid", "save_mermaid"]

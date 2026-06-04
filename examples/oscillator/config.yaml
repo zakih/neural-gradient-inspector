@@ -1,0 +1,26 @@
+# Config for the damped-oscillator PINN example.
+# This is just a YAML the example loads — the library imposes no config format.
+
+problem:                # free-form, specific to this example
+  m: 1.0                # mass
+  c: 0.3                # damping (underdamped: c^2 < 4mk)
+  k: 4.0                # stiffness
+  x0: 1.0               # initial position
+  v0: 0.0               # initial velocity
+  t_max: 20.0
+  n_collocation: 2000
+
+model:
+  hidden_width: 64
+  hidden_depth: 4
+
+training:
+  epochs: 300
+  learning_rate: 1.0e-3
+  batch_size: 256
+  w_physics: 1.0
+  w_ic: 1.0
+  seed: 42
+
+tracker:
+  metric: l2_norm       # l2_norm | mean_abs

@@ -1,178 +1,141 @@
-# PINN Gradient-Flow Framework
+# Model Gradient Tracker
 
-A modular PyTorch training framework for **physics-informed neural networks (PINNs)**, built around a gradient-flow inspection tool that shows *where and when learning actually happens inside the network during training*.
+If you are used to designing neural network architectures layer by layer, and feel unsatisfied by just looking at the loss curves, then this tool can help you visualize the magnitude of the gradient over the training epochs and the various layers. This closer inspection of the graident can help diagnose various training scenarios. Two tools in this repo:
 
-The included example trains a PINN to solve the **1D damped harmonic oscillator** — no dataset download, trains on a laptop CPU in under a minute, and reproduces the closed-form analytical solution. Swap in your own `BaseModel` and `BaseDataset` to use the framework for any problem.
+1. **`GradientTracker`** — records per-layer gradient magnitude across epochs and plots it. It peels back one layer beyond the loss curve: instead of only knowing *that* training converged, we see *where* in the network, across depth and across epochs, the learning actually occurs.
+2. Model architecture visualizer using **`to_mermaid` and/or `save_mermaid`** which turns any `nn.Module` into a Mermaid diagram (you'll have to render it yourself if you want a PNG of it), and `save_architecture_png` which is an equivalent matplotlib version.
 
----
+The library imposes nothing on how the model, data, or training loop are written. The tools can be called inside typical training loops (see below and `/examples`).
 
-## What This Is
+The `examples/oscillator/` directory shows both tools applied to a physics-informed neural network solving the 1D damped harmonic oscillator.
 
-This repository is built around three principles:
+## Future work
+I want to add some metadata hooks to see which data batches (if any) stand out in their contribution to the gradient. 
 
-**Modularity** — model, dataset, and training configuration are fully decoupled. Swap any component without touching the rest of the infrastructure.
 
-**Observability** — every run is logged, versioned, and reproducible. MLflow tracks all metrics, hyperparameters, and artifacts automatically.
+## The Tools
 
-**Insight** — the gradient-flow visualizer reveals the per-layer learning dynamics across epochs, with training/validation loss overlaid. For PINNs in particular this exposes the well-known tension between the PDE-residual and initial-condition loss terms.
-
----
-
-## The Gradient-Flow Inspection Component
-
-The core question this tool answers: **as training proceeds, where in the network is learning actually happening — and does it stay healthy?**
-
-Standard tooling tells you *that* a model converged. It rarely tells you *which layers drove that convergence*, whether early layers stalled, or whether the gradient signal degraded propagating back through the network. This component makes that visible.
-
-**How it works.** `GradientTracker` reads each layer's parameter gradients after every backward pass and records a single scalar summary per layer — the **L2 norm** of that layer's gradient (mean-absolute is also available). Recording one statistic per layer rather than every gradient element keeps memory flat (a handful of floats per step) and makes the tool usable on large models where storing full gradient tensors would be infeasible. Captures are aggregated per epoch.
-
-> **Why the L2 norm and not a signed sum:** positive and negative gradient elements cancel in a sum, so a hard-learning layer can read as ≈0. The norm measures the magnitude of the update signal, which is what "is this layer learning" actually means.
-
-The result is a compact `[num_layers × num_epochs]` matrix that drives three views:
-
-**1. Per-epoch gradient heatmap** — epochs on the x-axis, layers (input → output) on the y-axis, color encoding gradient magnitude (log scale by default). Training and validation loss are overlaid on a twin axis so gradient behavior reads directly against convergence. Surfaces at a glance:
-- **Vanishing gradients** — layers that go dark early and stop learning
-- **Exploding gradients** — layers that spike into instability
-- **Learning dynamics** — which layers learn fast, which lag, and how that shifts
-- **Architectural effects** — the smoothing impact of normalization or residual connections
-
-**2. Gradient norm curves** — per-layer gradient-norm trajectories over epochs, one line per layer: did a layer stabilize, collapse, or oscillate?
-
-**3. Layer contribution score** — a bar chart of each layer's gradient magnitude integrated over the whole run, ranking which layers drove the most learning.
-
-All three plots save to the active MLflow run's artifact directory automatically.
+### GradientTracker
 
 ```python
-from visualizations import GradientTracker
+from src.gradient_tracker import GradientTracker
 
-tracker = GradientTracker(model, metric="l2_norm")  # or "mean_abs"
+tracker = GradientTracker(model, metric="l2_norm")   # any nn.Module
 
 for epoch in range(epochs):
-    for batch in train_loader:
+    for batch in loader:
         optimizer.zero_grad()
-        loss = compute_loss(...)
+        loss = your_loss(...)
         loss.backward()
-        tracker.accumulate()        # read .grad, after backward, before zero_grad
+        tracker.accumulate()                          # after backward, before zero_grad
         optimizer.step()
-    tracker.on_epoch_end(epoch, train_loss, val_loss)   # finalise epoch + losses
+    tracker.log_epoch(epoch, losses={"train": train_loss, "val": val_loss})
 
-tracker.plot_heatmap("runs/gradient_heatmap.png")
-tracker.plot_curves("runs/gradient_curves.png")
-tracker.plot_contributions("runs/layer_contributions.png")
+tracker.plot_heatmap("heatmap.png")
+tracker.plot_curves("curves.png")
+tracker.plot_contributions("contributions.png")
 ```
 
-*Roadmap:* an animated epoch-by-epoch view, and correlation of gradient magnitude with input-data characteristics (which inputs drive learning in which layers).
+It records one scalar per layer per step — the gradient **L2 norm** (or `mean_abs`) — building a compact `[layers × epochs]` matrix. One statistic per layer rather than every gradient element keeps memory flat and works on large models.
 
----
+> *Why the norm, not a signed sum:* positive and negative gradient elements cancel in a sum, so a hard-learning layer can read as ≈0. The norm measures the magnitude of the update signal — what "is this layer learning" actually means.
 
-## Why a PINN Example
+Three views:
+- **Heatmap** — layers (input→output) × epochs, color = gradient magnitude, with any losses you logged overlaid. Reveals vanishing/exploding gradients, which layers learn fast or stall, and the effect of architectural choices.
+- **Curves** — per-layer gradient-norm trajectories.
+- **Contributions** — each layer's gradient magnitude integrated over the run, ranked.
 
-A physics-informed network is an ideal demonstration of the gradient tool. Its loss is a sum of competing terms — a PDE-residual term enforced at collocation points and an initial/boundary-condition term — and these terms routinely produce gradients of very different magnitudes. That imbalance is a documented PINN training pathology, and it is exactly the kind of structure the gradient heatmap is built to reveal. The damped oscillator also has a closed-form solution, so the network's output can be checked against ground truth.
+### to_mermaid
 
-The damped harmonic oscillator:
+```python
+from src.architecture import to_mermaid
+print(to_mermaid(model, input_shape=(1, 784)))
+```
 
-$$m\,x'' + c\,x' + k\,x = 0, \qquad x(0)=x_0,\ x'(0)=v_0$$
+Returns a Mermaid `graph TD` string. Paste it into a Markdown cell fenced as ` ```mermaid ` to render it.
 
-In the underdamped regime ($c^2 < 4mk$) the solution is a decaying sinusoid. The network is a small tanh MLP; the ODE residual is formed by differentiating the network output twice with `torch.autograd.grad`.
 
----
 
 ## Repository Structure
 
 ```
-pinn-gradient-flow/
+gradient-tracker/
 ├── README.md
 ├── Dockerfile
 ├── docker-compose.yaml
 ├── requirements.txt
-├── train.py                    # CLI entry point
 │
-├── notebooks/
-│   └── training.ipynb          # Main walkthrough — start here
+├── src/              
+│   ├── __init__.py
+│   ├── gradient_tracker.py
+│   └── architecture.py
 │
-├── src/
-│   ├── config.py               # Typed dataclass config + YAML + CLI overrides
-│   ├── dataset.py              # BaseDataset + OscillatorDataset (+ analytical solution)
-│   ├── model.py                # BaseModel + configurable MLP
-│   ├── trainer.py              # Training loop, PINN loss, MLflow integration
-│   └── utils.py                # Seeding, device detection, checkpointing
+├── templates/
+│   └── training_template.ipynb  ← copy this to start a new project (It's a fill-in-the-blank style file)
 │
-├── visualizations/
-│   ├── gradients.py            # GradientTracker — the inspection component
-│   └── architecture.py         # Model → Mermaid diagram generator
-│
-├── configs/
-│   └── default.yaml            # Default configuration
-│
-├── data/ runs/ checkpoints/    # Mounted / generated artifacts
+└── examples/
+    └── oscillator/              ← worked example: PINN for the damped oscillator
+        ├── oscillator.py
+        ├── config.yaml
+        └── oscillator.ipynb
 ```
 
----
+`src/` is the whole library. Everything in `templates/` is to help getting started with using the tools.
+
+
 
 ## Quickstart
 
-### Docker (recommended)
+
 
 ```bash
 git clone <your-repo-url>
-cd pinn-gradient-flow
-USER_ID=$(id -u) GROUP_ID=$(id -g) docker compose up
+cd gradient-tracker
 ```
 
-- JupyterLab → http://localhost:8888 (open `notebooks/training.ipynb`)
-- MLflow UI → http://localhost:5000
+### Docker
 
-Passing `USER_ID`/`GROUP_ID` makes files written into the mounted volume owned by your host user rather than root.
+- build the container
+``` shell
+docker compose build --build-arg USER_ID=$(id -u) --build-arg GROUP_ID=$(id -g)
+```
+
+- run the container
+``` shell
+docker compose up -d
+```
+
+- stop the container
+``` shell
+docker compose down
+```
+
+Open **http://localhost:8888** for JupyterLab, then run `examples/oscillator/oscillator.ipynb`. (Passing `USER_ID`/`GROUP_ID` keeps generated files owned by you, not root.). Or attach to container in VSCode.
 
 ### Local
 
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
-python train.py
+jupyter lab
 ```
 
-`train.py` accepts dotted CLI overrides:
 
-```bash
-python train.py training.epochs=500 physics.c=0.1 visualization.gradient_metric=mean_abs
-```
+## Using It in Your Own Project
 
----
+Copy `templates/training_template.ipynb`. Fill in three TODOs — your model, your data, your loss. The tracker calls and the generic loop are already wired in. You import from `src/` and never touch it.
 
-## Plugging In Your Own Model and Dataset
 
-**1.** Subclass `BaseDataset` (`src/dataset.py`) — implement `__len__` and `__getitem__`.
-**2.** Subclass `BaseModel` (`src/model.py`) — implement `forward`.
-**3.** Adjust `configs/default.yaml`.
-**4.** Run `train.py` or the notebook.
+## Example: 1D Oscillator Physics-Informed Neural Network (PINN)
 
-The training loop, logging, checkpointing, and gradient visualization run unchanged. (For a non-PINN problem, replace the physics loss in `src/trainer.py` with a standard supervised loss — the gradient tracker is loss-agnostic.)
+A physics-informed neural network is an ideal showcase: its loss combines a PDE-residual term and an initial-condition term, and these routinely produce gradients of very different magnitudes — a documented PINN training pathology that the gradient heatmap makes visible. The damped oscillator also has a closed-form solution, so the network's output is checked against ground truth.
 
----
+$$m\,x'' + c\,x' + k\,x = 0,\qquad x(0)=x_0,\ x'(0)=v_0$$
 
-## MLflow Tracking
+No dataset download — the "data" is collocation points sampled from the time domain; the physics lives in the loss. Trains on a laptop CPU in under a minute. See `examples/oscillator/`.
 
-Every run logs all hyperparameters, per-epoch losses (total / physics / IC), learning rate, the config snapshot, the architecture diagram, all gradient plots, the solution-vs-analytical comparison, the best metric and epoch, training duration, and a checkpoint.
-
-```bash
-mlflow ui --backend-store-uri runs/mlflow   # then open http://localhost:5000
-```
-
----
-
-## Configuration Reference
-
-See `configs/default.yaml`. Key sections: `physics` (oscillator parameters), `model` (MLP width/depth/activation), `training` (epochs, LR, scheduler, loss weights `w_physics`/`w_ic`, gradient clipping), `visualization` (capture interval, gradient metric), and `mlflow`.
-
----
 
 ## Requirements
 
-PyTorch (CPU build for this demo), MLflow, matplotlib, seaborn, scipy, numpy, pyyaml, tqdm, jupyterlab. See `requirements.txt` (torch is installed separately from the CPU wheel index — see the file's header note).
+See `requirements.txt`. Note, Pytorch CPU is installed just for the oscillator demo.
 
----
-
-## Contributing
-
-Issues and PRs welcome, particularly: additional schedulers, alternative logging backends (wandb, tensorboard), distributed training (DDP), the animated gradient view, and additional PDE examples (heat equation, Burgers').

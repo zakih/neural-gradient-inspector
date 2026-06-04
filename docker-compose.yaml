@@ -5,7 +5,7 @@ services:
       args:
         USER_ID: ${USER_ID:-1000}
         GROUP_ID: ${GROUP_ID:-1000}
-    container_name: pinn-notebook
+    container_name: gradient-tracker
     volumes:
       - .:/app
     ports:
@@ -13,23 +13,4 @@ services:
     command: >
       jupyter lab --ip=0.0.0.0 --port=8888 --no-browser
       --NotebookApp.token='' --NotebookApp.notebook_dir=/app
-    restart: unless-stopped
-
-  mlflow:
-    build:
-      context: .
-      args:
-        USER_ID: ${USER_ID:-1000}
-        GROUP_ID: ${GROUP_ID:-1000}
-    container_name: pinn-mlflow
-    volumes:
-      - .:/app
-    ports:
-      - "5000:5000"
-    working_dir: /app
-    # Share the runs/ directory with the notebook service so experiments show up
-    # in the UI in real time.
-    command: >
-      mlflow ui --host 0.0.0.0 --port 5000
-      --backend-store-uri /app/runs/mlflow
     restart: unless-stopped

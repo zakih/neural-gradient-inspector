@@ -1,14 +1,14 @@
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
-runs/mlflow/
-runs/*.png
-checkpoints/*.pt
-data/*
-!data/.gitkeep
-!runs/.gitkeep
-!checkpoints/.gitkeep
+*.png
+*.mmd
+*.pt
+mlruns/
+mlflow.db
+mlartifacts/
 .DS_Store
+
 
 
 # Byte-compiled / optimized / DLL files
