@@ -7,7 +7,10 @@ If you are used to designing neural network architectures layer by layer, and fe
 
 The library imposes nothing on how the model, data, or training loop are written. The tools can be called inside typical training loops (see below and `/examples`).
 
-The `examples/oscillator/` directory shows both tools applied to a physics-informed neural network solving the 1D damped harmonic oscillator.
+The `examples/oscillator/` directory shows both tools applied to a physics-informed neural network solving the 1D damped harmonic oscillator. The gradient heatmap during training and the layer contributions to learning are two useful outputs:
+
+![Gradient heatmap](examples/oscillator/gradient_heatmap.png)
+![Layer contribution](examples/oscillator/layer_contributions.png)
 
 ## Future work
 I want to add some metadata hooks to see which data batches (if any) stand out in their contribution to the gradient. 
